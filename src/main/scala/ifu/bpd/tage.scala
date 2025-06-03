@@ -22,7 +22,7 @@ class TageResp extends Bundle {
 }
 
 class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPeriod: Int)
-  (implicit p: Parameters) extends BoomModule()(p)
+               (implicit p: Parameters) extends BoomModule()(p)
   with HasBoomFrontendParameters
 {
   require(histLength <= globalHistoryLength)
@@ -65,7 +65,7 @@ class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPer
 
   def inc_ctr(ctr: UInt, taken: Bool): UInt = {
     Mux(!taken, Mux(ctr === 0.U, 0.U, ctr - 1.U),
-                Mux(ctr === 7.U, 7.U, ctr + 1.U))
+      Mux(ctr === 7.U, 7.U, ctr + 1.U))
   }
 
 
@@ -90,7 +90,7 @@ class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPer
   val lo_us  = SyncReadMem(nRows, Vec(bankWidth, Bool()))
   val table  = SyncReadMem(nRows, Vec(bankWidth, UInt(tageEntrySz.W)))
 
-  val mems = Seq((f"tage_l$histLength", nRows, bankWidth * tageEntrySz))
+  val mems = Seq((f"tage_l$histLength", nRows, bankWidth * (tageEntrySz + 2)))
 
   val s2_tag       = RegNext(s1_tag)
 
@@ -145,8 +145,8 @@ class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPer
 
   val wrbypass_hits    = VecInit((0 until nWrBypassEntries) map { i =>
     !doing_reset &&
-    wrbypass_tags(i) === update_tag &&
-    wrbypass_idxs(i) === update_idx
+      wrbypass_tags(i) === update_tag &&
+      wrbypass_idxs(i) === update_idx
   })
   val wrbypass_hit     = wrbypass_hits.reduce(_||_)
   val wrbypass_hit_idx = PriorityEncoder(wrbypass_hits)
@@ -154,10 +154,10 @@ class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPer
   for (w <- 0 until bankWidth) {
     update_wdata(w).ctr   := Mux(io.update_alloc(w),
       Mux(io.update_taken(w), 4.U,
-                              3.U
+        3.U
       ),
       Mux(wrbypass_hit,       inc_ctr(wrbypass(wrbypass_hit_idx)(w), io.update_taken(w)),
-                              inc_ctr(io.update_old_ctr(w), io.update_taken(w))
+        inc_ctr(io.update_old_ctr(w), io.update_taken(w))
       )
     )
     update_wdata(w).valid := true.B
@@ -184,15 +184,15 @@ class TageTable(val nRows: Int, val tagSz: Int, val histLength: Int, val uBitPer
 
 
 case class BoomTageParams(
-  //                                           nSets, histLen, tagSz
-  tableInfo: Seq[Tuple3[Int, Int, Int]] = Seq((  128,       2,     7),
-                                              (  128,       4,     7),
-                                              (  256,       8,     8),
-                                              (  256,      16,     8),
-                                              (  128,      32,     9),
-                                              (  128,      64,     9)),
-  uBitPeriod: Int = 2048
-)
+                           //                                           nSets, histLen, tagSz
+                           tableInfo: Seq[Tuple3[Int, Int, Int]] = Seq((  128,       2,     7),
+                             (  128,       4,     7),
+                             (  256,       8,     8),
+                             (  256,      16,     8),
+                             (  128,      32,     9),
+                             (  128,      64,     9)),
+                           uBitPeriod: Int = 2048
+                         )
 
 
 class TageBranchPredictorBank(params: BoomTageParams = BoomTageParams())(implicit p: Parameters) extends BranchPredictorBank()(p)
@@ -215,8 +215,8 @@ class TageBranchPredictorBank(params: BoomTageParams = BoomTageParams())(implici
 
   def inc_u(u: UInt, alt_differs: Bool, mispredict: Bool): UInt = {
     Mux(!alt_differs, u,
-    Mux(mispredict, Mux(u === 0.U, 0.U, u - 1.U),
-                    Mux(u === 3.U, 3.U, u + 1.U)))
+      Mux(mispredict, Mux(u === 0.U, 0.U, u - 1.U),
+        Mux(u === 3.U, 3.U, u + 1.U)))
   }
 
   val tt = params.tableInfo map {
@@ -280,8 +280,8 @@ class TageBranchPredictorBank(params: BoomTageParams = BoomTageParams())(implici
     // and also uses a longer history than the provider
     val allocatable_slots = (
       VecInit(f3_resps.map(r => !r(w).valid && r(w).bits.u === 0.U)).asUInt &
-      ~(MaskLower(UIntToOH(provider)) & Fill(tageNTables, provided))
-    )
+        ~(MaskLower(UIntToOH(provider)) & Fill(tageNTables, provided))
+      )
     val alloc_lfsr = random.LFSR(tageNTables max 2)
 
     val first_entry = PriorityEncoder(allocatable_slots)
@@ -294,8 +294,8 @@ class TageBranchPredictorBank(params: BoomTageParams = BoomTageParams())(implici
     f3_meta.allocate(w).bits  := alloc_entry
 
     val update_was_taken = (s1_update.bits.cfi_idx.valid &&
-                            (s1_update.bits.cfi_idx.bits === w.U) &&
-                            s1_update.bits.cfi_taken)
+      (s1_update.bits.cfi_idx.bits === w.U) &&
+      s1_update.bits.cfi_taken)
     when (s1_update.bits.br_mask(w) && s1_update.valid && s1_update.bits.is_commit_update) {
       when (s1_update_meta.provider(w).valid) {
         val provider = s1_update_meta.provider(w).bits
@@ -304,8 +304,8 @@ class TageBranchPredictorBank(params: BoomTageParams = BoomTageParams())(implici
         s1_update_u_mask(provider)(w) := true.B
 
         val new_u = inc_u(s1_update_meta.provider_u(w),
-                          s1_update_meta.alt_differs(w),
-                          s1_update_mispredict_mask(w))
+          s1_update_meta.alt_differs(w),
+          s1_update_mispredict_mask(w))
         s1_update_u      (provider)(w) := new_u
         s1_update_taken  (provider)(w) := update_was_taken
         s1_update_old_ctr(provider)(w) := s1_update_meta.provider_ctr(w)

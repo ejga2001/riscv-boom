@@ -13,25 +13,28 @@ import scala.math.min
 
 
 case class BoomHBIMParams(
-  nSets: Int = 2048,
-  useLocal: Boolean = false,
-  histLength: Int = 32
+ nSets: Int = 2048,
+ useLocal: Boolean = false,
+ histLength: Int = 32,
+ ctrBits: Int = 2
 )
 
 class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implicit p: Parameters) extends BranchPredictorBank()(p)
 {
   override val nSets = params.nSets
+  val ctrBits = params.ctrBits
 
   require(isPow2(nSets))
+  require(ctrBits > 0)
 
   val nWrBypassEntries = 2
 
   def bimWrite(v: UInt, taken: Bool): UInt = {
-    val old_bim_sat_taken  = v === 3.U
+    val old_bim_sat_taken  = v === ((1 << ctrBits) - 1).U
     val old_bim_sat_ntaken = v === 0.U
-    Mux(old_bim_sat_taken  &&  taken, 3.U,
+    Mux(old_bim_sat_taken  &&  taken, ((1 << ctrBits) - 1).U,
       Mux(old_bim_sat_ntaken && !taken, 0.U,
-      Mux(taken, v + 1.U, v - 1.U)))
+        Mux(taken, v + 1.U, v - 1.U)))
   }
   val s3_meta           = Wire(new BIMMeta)
   override val metaSz   = s3_meta.asUInt.getWidth
@@ -42,8 +45,8 @@ class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implici
   when (reset_idx === (nSets-1).U) { doing_reset := false.B }
 
 
-  val data  = Seq.fill(bankWidth) { SyncReadMem(nSets, UInt(2.W)) }
-  val mems = Seq(("hbim", nSets, bankWidth * 2))
+  val data  = Seq.fill(bankWidth) { SyncReadMem(nSets, UInt(ctrBits.W)) }
+  val mems = Seq(("hbim", nSets, bankWidth * ctrBits))
   def compute_folded_hist(hist: UInt, l: Int) = {
     val nChunks = (params.histLength + l - 1) / l
     val hist_chunks = (0 until nChunks) map {i =>
@@ -62,12 +65,12 @@ class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implici
 
   for (w <- 0 until bankWidth) {
 
-    s3_resp(w)        := s3_valid && s3_req_rdata(w)(1) && !doing_reset
+    s3_resp(w)        := s3_valid && s3_req_rdata(w)(ctrBits-1) && !doing_reset
     s3_meta.bims(w)   := s3_req_rdata(w)
   }
 
 
-  val s1_update_wdata   = Wire(Vec(bankWidth, UInt(2.W)))
+  val s1_update_wdata   = Wire(Vec(bankWidth, UInt(ctrBits.W)))
   val s1_update_wmask   = Wire(Vec(bankWidth, Bool()))
   val s1_update_meta    = s1_update.bits.meta.asTypeOf(new BIMMeta)
   val s1_update_index   = compute_folded_hist(
@@ -75,12 +78,12 @@ class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implici
     log2Ceil(nSets)) ^ s1_update_idx
 
   val wrbypass_idxs = Reg(Vec(nWrBypassEntries, UInt(log2Ceil(nSets).W)))
-  val wrbypass      = Reg(Vec(nWrBypassEntries, Vec(bankWidth, UInt(2.W))))
+  val wrbypass      = Reg(Vec(nWrBypassEntries, Vec(bankWidth, UInt(ctrBits.W))))
   val wrbypass_enq_idx = RegInit(0.U(log2Ceil(nWrBypassEntries).W))
 
   val wrbypass_hits = VecInit((0 until nWrBypassEntries) map { i =>
     !doing_reset &&
-    wrbypass_idxs(i) === s1_update_index(log2Ceil(nSets)-1,0)
+      wrbypass_idxs(i) === s1_update_index(log2Ceil(nSets)-1,0)
   })
   val wrbypass_hit = wrbypass_hits.reduce(_||_)
   val wrbypass_hit_idx = PriorityEncoder(wrbypass_hits)
@@ -97,12 +100,12 @@ class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implici
       (s1_update.bits.cfi_idx.valid && s1_update.bits.cfi_idx.bits === w.U)) {
       val was_taken = (
         s1_update.bits.cfi_idx.valid &&
-        (s1_update.bits.cfi_idx.bits === w.U) &&
-        (
-          (s1_update.bits.cfi_is_br && s1_update.bits.br_mask(w) && s1_update.bits.cfi_taken) ||
-          s1_update.bits.cfi_is_jal
+          (s1_update.bits.cfi_idx.bits === w.U) &&
+          (
+            (s1_update.bits.cfi_is_br && s1_update.bits.br_mask(w) && s1_update.bits.cfi_taken) ||
+              s1_update.bits.cfi_is_jal
+            )
         )
-      )
       val old_bim_value = Mux(wrbypass_hit, wrbypass(wrbypass_hit_idx)(w), s1_update_meta.bims(w))
 
       s1_update_wmask(w)     := true.B
@@ -117,7 +120,7 @@ class HBIMBranchPredictorBank(params: BoomHBIMParams = BoomHBIMParams())(implici
     when (doing_reset || (s1_update_wmask(w) && s1_update.valid && s1_update.bits.is_commit_update)) {
       data(w).write(
         Mux(doing_reset, reset_idx, s1_update_index),
-        Mux(doing_reset, 2.U, s1_update_wdata(w))
+        Mux(doing_reset, (1 << (ctrBits-1)).U, s1_update_wdata(w))
       )
     }
   }

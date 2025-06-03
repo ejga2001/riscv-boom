@@ -192,7 +192,7 @@ abstract class BranchPredictorBank(implicit p: Parameters) extends BoomModule()(
 
 
 class BranchPredictor(implicit p: Parameters) extends BoomModule()(p)
- with HasBoomFrontendParameters
+  with HasBoomFrontendParameters
 {
   val io = IO(new Bundle {
 
@@ -217,12 +217,12 @@ class BranchPredictor(implicit p: Parameters) extends BoomModule()(p)
   val banked_predictors = (0 until nBanks) map ( b => {
     val m = Module(if (useBPD) new ComposedBranchPredictorBank else new NullBranchPredictorBank)
     for ((n, d, w) <- m.mems) {
-      bpdStr.append(BoomCoreStringPrefix(f"bank$b $n: $d x $w = ${d * w / 8}"))
-      total_memsize = total_memsize + d * w / 8
+      bpdStr.append(BoomCoreStringPrefix(f"bank$b $n: $d x $w = ${d * w}"))
+      total_memsize = total_memsize + d * w
     }
     m
   })
-  bpdStr.append(BoomCoreStringPrefix(f"Total bpd size: ${total_memsize / 1024} KB\n"))
+  bpdStr.append(BoomCoreStringPrefix(f"Total bpd size: ${total_memsize / 1024} KBits\n"))
   override def toString: String = bpdStr.toString
 
   val banked_lhist_providers = Seq.fill(nBanks) { Module(if (localHistoryNSets > 0) new LocalBranchPredictorBank else new NullLocalBranchPredictorBank) }

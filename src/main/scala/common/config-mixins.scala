@@ -258,10 +258,12 @@ class WithNMediumBoomsGshareBP(n: Int = 1, globalPredictorSize: Int, overrideIdO
 
 class WithNMediumBoomsLocalBP(n: Int = 1,
                               localPredictorSize: Int,
-                              localHistoryTableSize: Int, overrideIdOffset: Option[Int] = None) extends Config(
+                              localHistoryTableSize: Int,
+                              localCtrBits: Int, overrideIdOffset: Option[Int] = None) extends Config(
   new WithLocalBPD(
     localPredictorSize = localPredictorSize,
-    localHistoryTableSize = localHistoryTableSize
+    localHistoryTableSize = localHistoryTableSize,
+    localCtrBits = localCtrBits
   ) ++
     new Config((site, here, up) => {
       case TilesLocated(InSubsystem) => {
@@ -743,9 +745,9 @@ class WithGshareBPD (globalPredictorSize: Int) extends Config((site, here, up) =
   }
 })
 
-class WithLocalBPD(
-                    localPredictorSize: Int = 1024,
-                    localHistoryTableSize: Int = 1024
+class WithLocalBPD(localPredictorSize: Int = 1024,
+                   localHistoryTableSize: Int = 1024,
+                   localCtrBits: Int = 2
                   ) extends Config((site, here, up) => {
   case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
     case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
@@ -758,7 +760,8 @@ class WithLocalBPD(
         val lbim = Module(new HBIMBranchPredictorBank(BoomHBIMParams(
           nSets=localPredictorSize,
           useLocal=true,
-          histLength=log2Ceil(localPredictorSize)
+          histLength=log2Ceil(localPredictorSize),
+          ctrBits = localCtrBits
         ))(p))
         val preds = Seq(lbim, btb)
         preds.map(_.io := DontCare)
@@ -826,7 +829,7 @@ class WithTAGEBPD(BHTEntries: Int,
   case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
     case tp: BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
       bpdMaxMetaLength = 120,
-      globalHistoryLength = 64,
+      globalHistoryLength = 256,
       localHistoryLength = 1,
       localHistoryNSets = 0,
       branchPredictor = ((resp_in: BranchPredictionBankResponse, p: Parameters) => {
